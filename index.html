@@ -35,7 +35,7 @@ header p{font-size:calc(11px*var(--k));color:#cfe0d6;margin-top:2px}
 #comp{position:fixed;left:14px;width:44px;height:44px;pointer-events:none}
 #attr{position:fixed;left:64px;font-size:calc(9px*var(--k));color:#fff;text-shadow:0 0 3px #000;direction:ltr;pointer-events:none}
 #bar{bottom:10px;left:10px;right:10px;padding:8px;display:flex;flex-direction:column;gap:8px;max-height:58vh}
-.row{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex:0 0 auto}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex:0 0 auto}
 .row::-webkit-scrollbar{display:none}
 #tabs{border-bottom:1px solid var(--line);padding-bottom:8px;flex-wrap:wrap}#months{flex-wrap:wrap;display:grid;grid-template-columns:repeat(6,1fr);gap:5px}#months button{padding:5px 0}
 #tabs button{border-radius:10px;padding:5px 10px}
