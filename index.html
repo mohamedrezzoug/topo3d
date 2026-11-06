@@ -185,7 +185,8 @@ const CX=D.x0+(D.nx-1)*D.step/2, CY=D.y0+(D.ny-1)*D.step/2;
 const EXT=Math.max(D.nx-1,D.ny-1)*D.step, SC=Math.max(0.6,EXT/370);
 document.querySelector('header h1').textContent=D.title||'Parcelle – Vue 3D';
 document.querySelector('header p').textContent=D.subtitle||'';
-document.getElementById('attr').style.display=SAT&&!D.texLabel?'':'none';
+const TEXS=Array.isArray(SAT)?SAT.filter(t=>t&&t.url):(SAT?[{label:D.texLabel||'Image satellite',url:SAT}]:[]);
+document.getElementById('attr').style.display=TEXS.some(t=>/satellite/i.test(t.label))?'':'none';
 const zs=D.z;let ZMIN=Infinity,ZMAX=-Infinity;for(const v of zs){if(v<ZMIN)ZMIN=v;if(v>ZMAX)ZMAX=v;}if(ZMAX-ZMIN<0.01)ZMAX=ZMIN+0.01;const ZMID=(ZMIN+ZMAX)/2;
 const XMAX=D.x0+(D.nx-1)*D.step, YMAX=D.y0+(D.ny-1)*D.step;
 let EX=1.5;
@@ -241,12 +242,13 @@ const colSlope=[];{const tmp=new THREE.Color();for(let k=0;k<slopeAt.length;k++)
 const lin=a=>{const c=new THREE.Color();const o=[];for(let k=0;k<a.length;k+=3){c.setRGB(a[k],a[k+1],a[k+2]);o.push(c.r,c.g,c.b);}return o;};
 const colHypA=new THREE.Float32BufferAttribute(colHyp,3),colSlopeA=new THREE.Float32BufferAttribute(colSlope,3);
 geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));geo.setAttribute('color',colHypA);geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));geo.setIndex(idx);geo.computeVertexNormals();
-let matSat=null;if(SAT){const satTex=new THREE.TextureLoader().load(SAT);satTex.colorSpace=THREE.SRGBColorSpace;satTex.anisotropy=renderer.capabilities.getMaxAnisotropy();matSat=new THREE.MeshLambertMaterial({map:satTex,side:THREE.DoubleSide});}
+const TEX=TEXS.map(t=>{const tx=new THREE.TextureLoader().load(t.url);tx.colorSpace=THREE.SRGBColorSpace;tx.anisotropy=renderer.capabilities.getMaxAnisotropy();return {label:t.label,mat:new THREE.MeshLambertMaterial({map:tx,side:THREE.DoubleSide})};});
+let matSat=TEX[0]?.mat||null;
 const matCol=new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide});
 const terrain=new THREE.Mesh(geo,matSat||matCol);terrain.receiveShadow=true;terrain.castShadow=true;G.add(terrain);
 let baseMode=SAT?'sat':'hyp';
 function setTerrain(mode){ // 'sat' | 'hyp' | 'slope'
- if(mode==='sat'&&matSat){terrain.material=matSat;}
+ if(mode==='sat'&&TEX.length){terrain.material=(TEX[S.tex]||TEX[0]).mat;}
  else{geo.setAttribute('color',mode==='slope'?colSlopeA:colHypA);terrain.material=matCol;matCol.needsUpdate=true;}}
 // skirt
 {const base=-8,sk=[],edge=[];
@@ -308,19 +310,18 @@ const spotG=new THREE.Group();G.add(spotG);spotG.visible=false;
 // ---------- context: oued, buffer, piste, neighbours ----------
 const ctxG=new THREE.Group();G.add(ctxG);
 const OUED_BUF=10;
-if(D.oued){const op=drapePts(D.oued,0.6);ctxG.add(fatLine(op,0x38a8ff,5));
- // buffer band polygon (both sides) as draped ribbon
- const L=D.oued;const left=[],right=[];
- const dens=[];for(let k=0;k<L.length-1;k++){const [X1,Y1]=L[k],[X2,Y2]=L[k+1];const n=Math.ceil(Math.hypot(X2-X1,Y2-Y1)/2);for(let s=0;s<n;s++){const a=s/n;dens.push([X1+(X2-X1)*a,Y1+(Y2-Y1)*a,X2-X1,Y2-Y1]);}}
- const bp=[];for(const [X,Y,dx,dy] of dens){const l=Math.hypot(dx,dy),nx=-dy/l*OUED_BUF,ny=dx/l*OUED_BUF;left.push([X+nx,Y+ny]);right.push([X-nx,Y-ny]);}
- const tri=[];const P3=([X,Y])=>{const [x,y]=W(X,Y);return [x,(inDEM(X,Y)?zAt(X,Y):zAt(Math.min(XMAX,Math.max(D.x0,X)),Math.min(YMAX,Math.max(D.y0,Y))))-ZMIN+0.35,y];};
- for(let k=0;k<left.length-1;k++){if(!inDEM(...dens[k])||!inDEM(...dens[k+1]))continue;const a=P3(left[k]),b=P3(right[k]),c=P3(left[k+1]),d=P3(right[k+1]);tri.push(...a,...b,...c,...c,...b,...d);}
- const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(tri,3));
- ctxG.add(new THREE.Mesh(bg,new THREE.MeshBasicMaterial({color:0x38a8ff,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false})));
- const pp=drapePts(D.piste,0.5);ctxG.add(fatLine(pp,0xf3d9a8,4,{dashed:true}));
- const mid=D.oued[2];addLabel('Oued Mazar','#8fd1ff',mid[0]+12,mid[1]-8,10,0.9,'ctx');
- const pm=D.piste[6];addLabel('Piste publique','#f3d9a8',Math.min(pm[0],XMAX-15),pm[1]+20,8,0.85,'ctx');
- for(const [n,X,Y] of D.neighbors)addLabel(n,'#d7dde0',X,Y,8,1.0,'ctx');}
+const LINES=[...(D.lines||[])];if(D.oued)LINES.push({type:'water',name:'Oued Mazar',pts:D.oued});if(D.piste)LINES.push({type:'road',name:'Piste publique',pts:D.piste});
+for(const Ln of LINES){if(!Ln.pts||Ln.pts.length<2)continue;const water=Ln.type==='water';
+ const lp=drapePts(Ln.pts,water?0.6:0.5);if(lp.length<2)continue;ctxG.add(fatLine(lp,water?0x38a8ff:0xf3d9a8,water?5:4,{dashed:!water}));
+ if(water){const L=Ln.pts,left=[],right=[],dens=[];
+  for(let k=0;k<L.length-1;k++){const [X1,Y1]=L[k],[X2,Y2]=L[k+1];const n=Math.max(1,Math.ceil(Math.hypot(X2-X1,Y2-Y1)/2));for(let s=0;s<n;s++){const a=s/n;dens.push([X1+(X2-X1)*a,Y1+(Y2-Y1)*a,X2-X1,Y2-Y1]);}}
+  for(const [X,Y,dx,dy] of dens){const l=Math.hypot(dx,dy)||1,nx=-dy/l*OUED_BUF,ny=dx/l*OUED_BUF;left.push([X+nx,Y+ny]);right.push([X-nx,Y-ny]);}
+  const tri=[];const P3=([X,Y])=>{const [x,y]=W(X,Y);return [x,zAt(Math.min(XMAX,Math.max(D.x0,X)),Math.min(YMAX,Math.max(D.y0,Y)))-ZMIN+0.35,y];};
+  for(let k=0;k<left.length-1;k++){if(!inDEM(dens[k][0],dens[k][1])||!inDEM(dens[k+1][0],dens[k+1][1]))continue;const a=P3(left[k]),b=P3(right[k]),c=P3(left[k+1]),d=P3(right[k+1]);tri.push(...a,...b,...c,...c,...b,...d);}
+  const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(tri,3));
+  ctxG.add(new THREE.Mesh(bg,new THREE.MeshBasicMaterial({color:0x38a8ff,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false})));}
+ if(Ln.name){const ins=Ln.pts.filter(p=>inDEM(p[0],p[1]));if(ins.length){const m=ins[Math.floor(ins.length/2)];addLabel(Ln.name,water?'#8fd1ff':'#f3d9a8',m[0],m[1],water?10:8,0.85,'ctx');}}}
+for(const [n,X,Y] of (D.neighbors||[]))addLabel(n,'#d7dde0',X,Y,8,1.0,'ctx');
 
 // ---------- tool overlay group ----------
 const toolG=new THREE.Group();G.add(toolG);
@@ -349,7 +350,7 @@ function go(v){const d=new THREE.Vector3(...VIEWS[v]).normalize().multiplyScalar
 cam.position.set(-0.6*EXT,0.6*EXT,0.8*EXT);ctl.target.set(0,(ZMID-ZMIN)*EX,0);go('iso');
 
 // ---------- state ----------
-const S={tool:'view',sat:!!SAT,cont:false,lab:true,spot:false,wall:true,ctx:true,rot:false,
+const S={tool:'view',tex:TEX.length?0:-1,cont:false,lab:true,spot:false,wall:true,ctx:true,rot:false,
  mMode:'dist',mPts:[],pPts:[],cPts:[],cLevel:null,bParcel:0,month:6,hour:15};
 
 // ---------- panes ----------
@@ -357,15 +358,16 @@ const pane=$('#pane');
 const T={};
 T.view=()=>{pane.innerHTML=`
 <div class="row" id="views">${[['iso','3D'],['top','Dessus'],['N','Nord'],['S','Sud'],['E','Est'],['W','Ouest']].map(([k,t])=>`<button data-v="${k}">${t}</button>`).join('')}</div>
-<div class="row">${[['sat',D.texLabel||'Image satellite'],['cont','Courbes de niveau'],['ctx','Oued & piste'],['lab','Bornes'],['wall','Clôture'],['spot','Points cotés'],['rot','Rotation']].filter(([k])=>!(k==='sat'&&!SAT)&&!(k==='ctx'&&!D.oued)).map(([k,t])=>`<button data-k="${k}" class="${S[k]?'on':''}">${t}</button>`).join('')}</div>
+<div class="row">${TEX.map((t,i)=>`<button data-tx="${i}" class="${S.tex===i?'on':''}">${t.label}</button>`).join('')}${[['cont','Courbes de niveau'],['ctx','Oued & piste'],['lab','Bornes'],['wall','Clôture'],['spot','Points cotés'],['rot','Rotation']].filter(([k])=>!(k==='ctx'&&!LINES.length)).map(([k,t])=>`<button data-k="${k}" class="${S[k]?'on':''}">${t}</button>`).join('')}</div>
 <div class="row"><span class="hint" style="align-self:center">Taille du texte</span><button id="fsM">A−</button><button id="fsP">A+</button></div>
 <div class="sl">Exagération verticale <input id="ex" type="range" min="1" max="4" step="0.25" value="${EX}"><output id="exo">×${EX}</output></div>
-<div class="hint">Touchez le terrain pour lire X, Y et l’altitude.${D.oued?' Bande bleue = 10 m de part et d’autre de l’oued (indicatif).':''}</div>`;
+<div class="hint">Touchez le terrain pour lire X, Y et l’altitude.${LINES.some(l=>l.type==='water')?' Bande bleue = 10 m de part et d’autre de l’oued (indicatif).':''}</div>`;
  pane.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));
+ pane.querySelectorAll('[data-tx]').forEach(b=>b.onclick=()=>{const i=+b.dataset.tx;S.tex=S.tex===i?-1:i;pane.querySelectorAll('[data-tx]').forEach(x=>x.classList.toggle('on',+x.dataset.tx===S.tex));applyToggles();});
  pane.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{S[b.dataset.k]=!S[b.dataset.k];b.classList.toggle('on',S[b.dataset.k]);applyToggles();});
  $('#ex').oninput=e=>{EX=+e.target.value;$('#exo').textContent='×'+EX;applyEx();};
  $('#fsM').onclick=()=>setK(-0.1);$('#fsP').onclick=()=>setK(0.1);};
-function applyToggles(){baseMode=S.sat?'sat':'hyp';if(S.tool!=='slope')setTerrain(baseMode);contG.visible=S.cont;ctxG.visible=S.ctx;spotG.visible=S.spot;wallG.visible=S.wall;postG.visible=S.lab;
+function applyToggles(){baseMode=S.tex>=0?'sat':'hyp';if(S.tool!=='slope')setTerrain(baseMode);contG.visible=S.cont;ctxG.visible=S.ctx;spotG.visible=S.spot;wallG.visible=S.wall;postG.visible=S.lab;
  labels.forEach(L=>L.s.visible=L.group==='bornes'?S.lab:L.group==='ctx'?S.ctx:true);ctl.autoRotate=S.rot;ctl.autoRotateSpeed=1.2;}
 
 // ---- measure ----
@@ -620,7 +622,7 @@ function parseBornes(txt){const parcels=[];let cur=null;
  for(const raw of txt.split(/\r?\n/)){const line=raw.trim();if(!line)continue;
   if(line.startsWith('#')){cur={name:line.replace(/^#+/,'').trim()||`Parcelle ${parcels.length+1}`,pts:[]};parcels.push(cur);continue;}
   const tk=tokens(line);const nums=tk.filter(isNum).map(Number).filter(v=>Math.abs(v)>1000);if(nums.length<2)continue;
-  const nm=tk.find(s=>!isNum(s));if(!cur){cur={name:`Parcelle ${parcels.length+1}`,pts:[]};parcels.push(cur);}
+  let nm=tk.find(s=>!isNum(s));if(!nm&&tk.length>=3&&/^\d{1,4}$/.test(tk[0]))nm=tk[0];if(!cur){cur={name:`Parcelle ${parcels.length+1}`,pts:[]};parcels.push(cur);}
   cur.pts.push([nm||`S${cur.pts.length+1}`,nums[0],nums[1]]);}
  return parcels.filter(p=>p.pts.length>=3);}
 
@@ -698,6 +700,54 @@ function contourSegs(z,x0,y0,nx,ny,st){let mn=Infinity,mx=-Infinity;for(const v 
 function pipT(X,Y,P){let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const [xi,yi]=P[i],[xj,yj]=P[j];if(((yi>Y)!=(yj>Y))&&(X<(xj-xi)*(Y-yi)/(yj-yi)+xi))c=!c;}return c;}
 const haF=m2=>{const ha=Math.floor(m2/10000),a=Math.floor((m2-ha*10000)/100),ca=Math.round(m2-ha*10000-a*100);return `${ha} Ha ${a} A ${ca} Ca`;};
 
+
+// ================= ONLINE ENRICHMENT (satellite, relief, roads/rivers) =================
+const T2LL=(z,x,y)=>[x/2**z*360-180,Math.atan(Math.sinh(Math.PI*(1-2*y/2**z)))*180/Math.PI];
+const LL2T=(z,lon,lat)=>[(lon+180)/360*2**z,(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*2**z];
+async function tileMosaic(urlFn,z,lonMin,latMin,lonMax,latMax){const [fx0,fy0]=LL2T(z,lonMin,latMax),[fx1,fy1]=LL2T(z,lonMax,latMin);
+ const x0=Math.floor(fx0),y0=Math.floor(fy0),x1=Math.floor(fx1),y1=Math.floor(fy1);const nx=x1-x0+1,ny=y1-y0+1;
+ const cv=document.createElement('canvas');cv.width=nx*256;cv.height=ny*256;const c=cv.getContext('2d',{willReadFrequently:true});let ok=0;
+ await Promise.all([...Array(nx*ny).keys()].map(async k=>{const x=x0+k%nx,y=y0+Math.floor(k/nx);try{const r=await fetch(urlFn(z,x,y));if(!r.ok)return;const im=await createImageBitmap(await r.blob());c.drawImage(im,(x-x0)*256,(y-y0)*256);ok++;}catch(e){}}));
+ if(!ok)throw new Error('tuiles indisponibles');return {cv,c,z,x0,y0,nx,ny};}
+function pickZoom(lonMin,latMin,lonMax,latMax,zmax,maxTiles){for(let z=zmax;z>=10;z--){const [a,b]=LL2T(z,lonMin,latMax),[c,d]=LL2T(z,lonMax,latMin);if((Math.floor(c)-Math.floor(a)+1)*(Math.floor(d)-Math.floor(b)+1)<=maxTiles)return z;}return 10;}
+async function enrich(d,proj,say=()=>{}){const res={};if(!navigator.onLine)return res;
+ try{await loadLib(LIBS.proj);}catch(e){return res;}const tr=window.proj4(PROJDEF[proj],'EPSG:4326');
+ const X0=d.x0,Y0=d.y0,X1=d.x0+(d.nx-1)*d.step,Y1=d.y0+(d.ny-1)*d.step;
+ const cs=[[X0,Y0],[X1,Y0],[X0,Y1],[X1,Y1]].map(p=>tr.forward(p));const lonMin=Math.min(...cs.map(p=>p[0])),lonMax=Math.max(...cs.map(p=>p[0])),latMin=Math.min(...cs.map(p=>p[1])),latMax=Math.max(...cs.map(p=>p[1]));
+ // lattice mapping texture/grid -> lon/lat
+ const LAT=32;const lat=[];for(let j=0;j<=LAT;j++)for(let i=0;i<=LAT;i++){lat.push(tr.forward([X0+(X1-X0)*i/LAT,Y1-(Y1-Y0)*j/LAT]));}
+ const llAt=(u,v)=>{const fi=u*LAT,fj=v*LAT,i=Math.min(LAT-1,Math.floor(fi)),j=Math.min(LAT-1,Math.floor(fj)),a=fi-i,b=fj-j;const g=(ii,jj)=>lat[jj*(LAT+1)+ii];
+  const p00=g(i,j),p10=g(i+1,j),p01=g(i,j+1),p11=g(i+1,j+1);return [(p00[0]*(1-a)+p10[0]*a)*(1-b)+(p01[0]*(1-a)+p11[0]*a)*b,(p00[1]*(1-a)+p10[1]*a)*(1-b)+(p01[1]*(1-a)+p11[1]*a)*b];};
+ // satellite
+ try{say('Image satellite…');const z=pickZoom(lonMin,latMin,lonMax,latMax,18,30);
+  const M=await tileMosaic((z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,z,lonMin,latMin,lonMax,latMax);
+  const src=M.c.getImageData(0,0,M.cv.width,M.cv.height).data,SW=M.cv.width,SH=M.cv.height;
+  const W=Math.min(2048,Math.round((X1-X0)/0.25)),H=Math.max(2,Math.round(W*(Y1-Y0)/(X1-X0)));const out=new ImageData(W,H),od=out.data;
+  for(let v=0;v<H;v++)for(let u=0;u<W;u++){const [lo,la]=llAt(u/(W-1),v/(H-1));const [tx,ty]=LL2T(z,lo,la);const px=Math.floor((tx-M.x0)*256),py=Math.floor((ty-M.y0)*256);const o=(v*W+u)*4;
+   if(px>=0&&py>=0&&px<SW&&py<SH){const k=(py*SW+px)*4;od[o]=src[k];od[o+1]=src[k+1];od[o+2]=src[k+2];}od[o+3]=255;}
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;cv.getContext('2d').putImageData(out,0,0);res.sat=cv.toDataURL('image/jpeg',0.85);}catch(e){console.warn('sat',e);}
+ // relief (only when the plan has no heights)
+ if(d.spots.length<3){try{say('Relief (SRTM)…');const z=pickZoom(lonMin,latMin,lonMax,latMax,15,16);
+  const M=await tileMosaic((z,x,y)=>`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`,z,lonMin,latMin,lonMax,latMax);
+  const src=M.c.getImageData(0,0,M.cv.width,M.cv.height).data,SW=M.cv.width,SH=M.cv.height;
+  const el=(px,py)=>{px=Math.max(0,Math.min(SW-1,px));py=Math.max(0,Math.min(SH-1,py));const k=(py*SW+px)*4;return src[k]*256+src[k+1]+src[k+2]/256-32768;};
+  const z2=new Float32Array(d.nx*d.ny);let mn=Infinity,mx=-Infinity;
+  for(let j=0;j<d.ny;j++)for(let i=0;i<d.nx;i++){const [lo,la]=llAt(i/(d.nx-1),1-j/(d.ny-1));const [tx,ty]=LL2T(z,lo,la);const fx=(tx-M.x0)*256-0.5,fy=(ty-M.y0)*256-0.5;const ix=Math.floor(fx),iy=Math.floor(fy),a=fx-ix,b=fy-iy;
+   const h=(el(ix,iy)*(1-a)+el(ix+1,iy)*a)*(1-b)+(el(ix,iy+1)*(1-a)+el(ix+1,iy+1)*a)*b;z2[j*d.nx+i]=h;mn=Math.min(mn,h);mx=Math.max(mx,h);}
+  if(isFinite(mn)&&mx-mn<2000&&mn>-500){d.z=Array.from(z2,v=>+v.toFixed(2));const cs2=contourSegs(z2,d.x0,d.y0,d.nx,d.ny,d.step);d.contourSegs=cs2.segs;d.cMajor=cs2.major;restat(d);
+   d.note='Relief approximatif issu du modèle SRTM (~30 m), le plan ne contient pas de cotes';res.dem=true;d.subtitle=d.subtitle.replace(/\d+ points cotés/,'relief SRTM');}}catch(e){console.warn('dem',e);}}
+ // roads & rivers (OpenStreetMap)
+ try{say('Routes et oueds (OpenStreetMap)…');const m=0.002;const bb=`${latMin-m},${lonMin-m},${latMax+m},${lonMax+m}`;
+  const qy=`[out:json][timeout:20];(way["waterway"](${bb});way["natural"="water"](${bb});way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|track|service|road|living_street)$"](${bb}););out geom;`;
+  const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',body:'data='+encodeURIComponent(qy)});const j=await r.json();
+  const RN={motorway:'Autoroute',trunk:'Route nationale',primary:'Route principale',secondary:'Route secondaire',tertiary:'Route',unclassified:'Route',residential:'Rue',track:'Piste',service:'Voie',road:'Route',living_street:'Rue'};
+  const L=(j.elements||[]).filter(e=>e.geometry&&e.geometry.length>1).map(e=>{const water=!!(e.tags.waterway||e.tags.natural==='water');
+   return {type:water?'water':'road',name:e.tags.name||e.tags['name:fr']||e.tags.ref||(water?(e.tags.waterway==='river'?'Oued':'Cours d’eau'):RN[e.tags.highway]||'Route'),pts:e.geometry.map(g=>tr.inverse([g.lon,g.lat]))};});
+  if(L.length){d.lines=(d.lines||[]).concat(L);res.osm=L.length;}}catch(e){console.warn('osm',e);}
+ return res;}
+function restat(d){const {nx,ny,step:st,x0,y0}=d,z=d.z;for(const P of d.parcels){const xy=P.pts.map(v=>[v[1],v[2]]);let zmn=Infinity,zmx=-Infinity,ss=0,n=0;
+ for(let j=1;j<ny-1;j++)for(let i=1;i<nx-1;i++){const X=x0+i*st,Y=y0+j*st;if(!pipT(X,Y,xy))continue;const v=z[j*nx+i];zmn=Math.min(zmn,v);zmx=Math.max(zmx,v);ss+=Math.hypot((z[j*nx+i+1]-z[j*nx+i-1])/(2*st),(z[(j+1)*nx+i]-z[(j-1)*nx+i])/(2*st))*100;n++;}
+ if(n)P.stats={zmin:+zmn.toFixed(1),zmax:+zmx.toFixed(1),slope:+(ss/n).toFixed(1)};}}
 async function buildData({name,parcels,spots,proj,srcNote}){
  const all=[...parcels.flatMap(p=>p.pts.map(v=>[v[1],v[2]]))];let bx=all.length?all:spots.map(p=>[p[0],p[1]]);
  if(!bx.length)throw new Error('Aucune donnée exploitable (ni bornes, ni points cotés).');
@@ -730,7 +780,8 @@ q('#impGo').onclick=async()=>{const btn=q('#impGo');btn.disabled=true;msg('Const
    if(parcels.length===1&&/^Parcelle 1$/.test(parcels[0].name)&&q('#impName').value)parcels[0].name=q('#impName').value;}
   await new Promise(r=>setTimeout(r,30));
   const d=await buildData({name:q('#impName').value,parcels,spots,proj:q('#impProj').value,srcNote});
-  RUN.dispose();RUN=main(d,null);imp.hidden=true;msg('');
+  const en=await enrich(d,q('#impProj').value,t=>msg(t));
+  RUN.dispose();RUN=main(d,en.sat?[{label:'Image satellite',url:en.sat}]:null);imp.hidden=true;msg('');
   try{localStorage.setItem('topo3d_last',JSON.stringify(d));}catch(e){}
  }catch(err){msg(`<span class="err">${err.message}</span>`);console.error(err);}
  btn.disabled=false;};
@@ -738,7 +789,7 @@ window.__imp={buildData,parsePoints,parseBornes,analyseDxf};
 // ================= SCANNED PLAN ASSISTANT =================
 const PDFJS='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',PDFW='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 const toastS=t=>{const e=q('#toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',1600);};const bdS=v=>`<bdi dir="ltr">${v}</bdi>`;const scan=q('#scan'),scCv=q('#scCv'),scCtx=scCv.getContext('2d'),scPanel=q('#scPanel');
-const SCN={step:1,img:null,W:0,H:0,cal:[],T:null,parcels:[],spots:[],mode:null,view:{s:1,ox:0,oy:0}};
+const SCN={lines:[],lmode:'b',step:1,img:null,W:0,H:0,cal:[],T:null,parcels:[],spots:[],mode:null,view:{s:1,ox:0,oy:0}};
 q('#srcScan').onclick=()=>{imp.hidden=true;scan.hidden=false;scResize();scRender();};
 q('#scClose').onclick=()=>{scan.hidden=true;};
 q('#camBtn').onclick=()=>q('#camIn').click();
@@ -814,6 +865,9 @@ function scRender(){const rr=scCv.getBoundingClientRect();if(rr.height&&Math.abs
  if(SCN.T)for(const [k,P] of SCN.parcels.entries()){c.beginPath();P.pts.forEach((v,i)=>{const [px,py]=SCN.T.inv(v[1],v[2]);const [x,y]=toScr(px,py);i?c.lineTo(x,y):c.moveTo(x,y);});if(P.pts.length>2)c.closePath();
   c.strokeStyle=PALETTE[k%PALETTE.length];c.lineWidth=2.5;c.stroke();c.fillStyle=PALETTE[k%PALETTE.length]+'33';if(P.pts.length>2)c.fill();
   P.pts.forEach(v=>{const [x,y]=toScr(...SCN.T.inv(v[1],v[2]));c.fillStyle='#d32f2f';c.beginPath();c.arc(x,y,4,0,7);c.fill();c.font='600 11px Inter,sans-serif';c.fillText(v[0],x+6,y-6);});}
+ // traced lines
+ if(SCN.T)for(const L of SCN.lines){c.beginPath();L.pts.forEach((p,i)=>{const [x,y]=toScr(...SCN.T.inv(p[0],p[1]));i?c.lineTo(x,y):c.moveTo(x,y);});c.strokeStyle=L.type==='water'?'#1e88e5':'#ef6c00';c.lineWidth=3.5;c.setLineDash(L.type==='water'?[]:[8,5]);c.stroke();c.setLineDash([]);
+  L.pts.forEach(p=>{const [x,y]=toScr(...SCN.T.inv(p[0],p[1]));c.fillStyle=c.strokeStyle;c.beginPath();c.arc(x,y,3.5,0,7);c.fill();});}
  // spots
  for(const s of SCN.spots){const [x,y]=toScr(s.px,s.py);c.fillStyle='#ffb300';c.strokeStyle='#000';c.lineWidth=1;c.beginPath();c.arc(x,y,4.5,0,7);c.fill();c.stroke();
   c.font='600 11px Inter,sans-serif';c.lineWidth=3;c.strokeStyle='#fff';c.strokeText(s.Z.toFixed(2),x+6,y+4);c.fillStyle='#7a4a00';c.fillText(s.Z.toFixed(2),x+6,y+4);}
@@ -843,6 +897,7 @@ async function scTap(px,py){if(!q('#scPop').hidden)return;SCN.pend=[px,py];scRen
  if(SCN.step===2){let sug=['',''];if(SCN.T){const [X,Y]=SCN.T.fw(px,py);sug=[X.toFixed(2),Y.toFixed(2)];}
   const v=await ask([{l:'X',v:sug[0]},{l:'Y',v:sug[1]}],`Point de calage C${SCN.cal.length+1} : coordonnées (croix du quadrillage ou borne connue)`);
   if(v){SCN.cal.push({px,py,X:v[0],Y:v[1]});SCN.T=solveCal(SCN.cal);}scPanelRender();}
+ else if(SCN.step===3&&SCN.lmode!=='b'){if(!SCN.T)return;const [X,Y]=SCN.T.fw(px,py);let L=SCN.curLine;if(!L){L=SCN.curLine={type:SCN.lmode,name:SCN.lmode==='water'?'Oued':'Piste',pts:[]};SCN.lines.push(L);}L.pts.push([X,Y]);scPanelRender();}
  else if(SCN.step===3){if(!SCN.T)return;const [X,Y]=SCN.T.fw(px,py);if(!SCN.parcels.length||SCN.parcels.at(-1).fromPaste)SCN.parcels.push({name:`Parcelle ${SCN.parcels.length+1}`,pts:[]});
   const P=SCN.parcels.at(-1);const v=await ask([{l:'Nom de la borne',v:`B${P.pts.length+1}`,t:'text'}],`Borne à X ${X.toFixed(2)} · Y ${Y.toFixed(2)}`);if(v)P.pts.push([v[0]||`B${P.pts.length+1}`,X,Y]);scPanelRender();}
  else if(SCN.step===4){if(!SCN.T)return;const last=SCN.spots.at(-1);const v=await ask([{l:'Altitude Z (m)',v:last?String(Math.round(last.Z)):''}],'Point coté : saisissez la valeur lue sur le plan');
@@ -858,6 +913,8 @@ function scPanelRender(){q('#scStep').textContent=`${SCN.step}/4 · ${STEPS[SCN.
  if(SCN.step===3)h=`<div class="hint">Collez le tableau des bornes du plan (Nom X Y, ou X Nom Y), <b>ou</b> touchez les bornes sur le plan dans l’ordre. Vérifiez que le contour tombe bien sur le dessin.</div>
   <textarea id="scB" rows="3" placeholder="# Titre 12345/30&#10;464899.42 B1 468376.61&#10;…">${(SCN.btxt||'').replace(/</g,'&lt;')}</textarea>
   <div class="row"><button id="scBpaste">Placer le tableau</button><button id="scUndo">↶ Annuler</button><span style="flex:1"></span><button id="scPrev">Retour</button><button id="scNext" class="on">Suivant</button></div>
+  <div class="row"><span class="hint">Touchez le plan pour :</span><button data-lm="b" class="${SCN.lmode==='b'?'on':''}">Bornes</button><button data-lm="water" class="${SCN.lmode==='water'?'on':''}">Tracer un oued</button><button data-lm="road" class="${SCN.lmode==='road'?'on':''}">Tracer une piste</button>${SCN.curLine?'<button id="scEndL">✓ Terminer la ligne</button>':''}</div>
+  ${SCN.lines.length?`<div class="res">${SCN.lines.map(l=>`${l.type==='water'?'💧':'🛣️'} ${l.name} (${l.pts.length} pts)`).join(' · ')}</div>`:''}
   <div class="res">${SCN.parcels.map(P=>`${P.name} : <b>${P.pts.length}</b> bornes${P.pts.length>2?' · '+bdS(haF(pArea(P.pts.map(v=>[v[1],v[2]])))):''}`).join(' · ')||'Aucune borne.'}</div><div id="scWarn" class="res"></div>`;
  if(SCN.step===4)h=`<div class="hint">Touchez chaque point coté (le petit point à côté du chiffre) et saisissez l’altitude. Plus il y a de points (surtout à l’intérieur de la parcelle), plus le relief est juste.</div>
   <div class="res"><b>${SCN.spots.length}</b> points cotés${SCN.spots.length?` · de ${bdS(Math.min(...SCN.spots.map(s=>s.Z)).toFixed(1))} à ${bdS(Math.max(...SCN.spots.map(s=>s.Z)).toFixed(1))} m`:''}</div>
@@ -867,7 +924,9 @@ function scPanelRender(){q('#scStep').textContent=`${SCN.step}/4 · ${STEPS[SCN.
  const on=(id,f)=>{const e=scPanel.querySelector('#'+id);if(e)e.onclick=f;};
  const f=scPanel.querySelector('#scFile');if(f)f.onchange=e=>e.target.files[0]&&scLoad(e.target.files[0]);on('scCam',()=>q('#camIn').click());
  on('scNext',()=>{SCN.step++;scPanelRender();});on('scPrev',()=>{SCN.step--;scPanelRender();});
- on('scUndo',()=>{if(!q('#scPop').hidden){q('#pNo').click();return;}if((SCN.step===2&&!SCN.cal.length)||(SCN.step===3&&!SCN.parcels.length)||(SCN.step===4&&!SCN.spots.length)){toastS('Rien à annuler');return;}if(SCN.step===2){SCN.cal.pop();SCN.T=solveCal(SCN.cal);}else if(SCN.step===3){const P=SCN.parcels.at(-1);if(P){if(P.fromPaste)SCN.parcels.pop();else{P.pts.pop();if(!P.pts.length)SCN.parcels.pop();}}}else if(SCN.step===4)SCN.spots.pop();scPanelRender();scRender();});
+ on('scUndo',()=>{if(!q('#scPop').hidden){q('#pNo').click();return;}if(SCN.step===3&&SCN.lmode!=='b'&&SCN.lines.length){const L=SCN.curLine||SCN.lines.at(-1);L.pts.pop();if(!L.pts.length){SCN.lines.splice(SCN.lines.indexOf(L),1);SCN.curLine=null;}scPanelRender();scRender();return;}if((SCN.step===2&&!SCN.cal.length)||(SCN.step===3&&!SCN.parcels.length)||(SCN.step===4&&!SCN.spots.length)){toastS('Rien à annuler');return;}if(SCN.step===2){SCN.cal.pop();SCN.T=solveCal(SCN.cal);}else if(SCN.step===3){const P=SCN.parcels.at(-1);if(P){if(P.fromPaste)SCN.parcels.pop();else{P.pts.pop();if(!P.pts.length)SCN.parcels.pop();}}}else if(SCN.step===4)SCN.spots.pop();scPanelRender();scRender();});
+ scPanel.querySelectorAll('[data-lm]').forEach(b=>b.onclick=()=>{SCN.lmode=b.dataset.lm;SCN.curLine=null;scPanelRender();});
+ on('scEndL',async()=>{const L=SCN.curLine;SCN.curLine=null;if(L&&L.pts.length<2){SCN.lines.pop();toastS('Ligne trop courte');}else if(L){const v=await ask([{l:'Nom',v:L.name,t:'text'}],'Nom de la ligne (ex. Oued Mazar, Piste…)');if(v&&v[0])L.name=v[0];}scPanelRender();scRender();});
  on('scBpaste',()=>{SCN.btxt=scPanel.querySelector('#scB').value;const ps=parseBornes(SCN.btxt);if(!ps.length){toastS('Aucune borne reconnue');return;}ps.forEach(p=>p.fromPaste=true);SCN.parcels=SCN.parcels.filter(p=>!p.fromPaste).concat(ps);scPanelRender();scFocus();});
  if(SCN.step===4){const sp=scPanel.querySelector('#scProj');sp.value=q('#impProj').value;}
  on('scGo',async()=>{const m=scPanel.querySelector('#scMsg');m.textContent='Construction…';
@@ -882,8 +941,9 @@ function scPanelRender(){q('#scStep').textContent=`${SCN.step}/4 · ${STEPS[SCN.
     const out=c.createImageData(W,H),od=out.data;for(let v=0;v<H;v++){const Y=y1-v/sy;for(let u=0;u<W;u++){const X=x0+u/sx;const [px,py]=T.inv(X,Y);const i=(v*W+u)*4;
      const ix=px|0,iy=py|0;if(ix>=0&&iy>=0&&ix<SCN.W&&iy<SCN.H){const k=(iy*SCN.W+ix)*4;od[i]=sd[k];od[i+1]=sd[k+1];od[i+2]=sd[k+2];}else{od[i]=od[i+1]=od[i+2]=255;}od[i+3]=255;}}
     c.putImageData(out,0,0);}
-   d.texLabel='Plan drapé';d.subtitle+=' · plan scanné';
-   RUN.dispose();RUN=main(d,cv.toDataURL('image/jpeg',0.85));scan.hidden=true;
+   d.subtitle+=' · plan scanné';if(SCN.lines.length)d.lines=SCN.lines.filter(l=>l.pts.length>1).map(l=>({type:l.type,name:l.name,pts:l.pts}));
+   const planURL=cv.toDataURL('image/jpeg',0.85);const en=await enrich(d,proj,t=>m.textContent=t);
+   RUN.dispose();RUN=main(d,en.sat?[{label:'Image satellite',url:en.sat},{label:'Plan drapé',url:planURL}]:[{label:'Plan drapé',url:planURL}]);scan.hidden=true;
    try{localStorage.setItem('topo3d_last',JSON.stringify(d));}catch(e){}
   }catch(err){m.innerHTML=`<span class="err">${err.message}</span>`;console.error(err);}});}
 scPanelRender();
