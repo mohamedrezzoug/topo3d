@@ -66,7 +66,7 @@ td a{color:#8fd1ff;text-decoration:none}
 #prof{width:100%;height:120px;display:block}
 a.btn{flex:0 0 auto;font-size:calc(12px*var(--k));color:var(--ink);background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:999px;padding:6px 12px;text-decoration:none;white-space:nowrap}a.btn.main{background:#1a73e8;border-color:#1a73e8;color:#fff;font-weight:600}
 #situ{width:100%;border-radius:10px;display:block;background:#000}
-.toast{position:fixed;left:50%;top:70px;transform:translateX(-50%);background:var(--acc);color:#1b1406;font-size:calc(12px*var(--k));font-weight:600;padding:6px 14px;border-radius:999px;display:none;z-index:9}
+.toast{position:fixed;left:50%;top:70px;transform:translateX(-50%);background:var(--acc);color:#1b1406;font-size:calc(12px*var(--k));font-weight:600;padding:6px 14px;border-radius:999px;display:none;z-index:60}
 @media (min-width:760px){#bar{right:auto;width:480px}#comp{left:auto!important;right:18px}#attr{left:auto!important;right:70px}#info{max-width:260px;font-size:calc(12.5px*var(--k))}}
 #impBtn{position:fixed;top:12px;right:12px;z-index:5;display:flex;align-items:center;gap:6px;background:rgba(14,21,18,.9);border:1px solid var(--line);padding:7px 11px}
 #impBtn span{font-size:calc(12px*var(--k))}
@@ -795,6 +795,12 @@ async function scLoad(file){scPanel.querySelector('#scInfo').textContent='Charge
   scFit();SCN.step=2;scPanelRender();}
  catch(err){scPanel.querySelector('#scInfo').innerHTML=`<span class="err">Lecture impossible : ${err.message}</span>`;}}
 // ---- view (pan / zoom) ----
+function scFocus(){if(!SCN.T)return;const pts=SCN.parcels.flatMap(P=>P.pts.map(v=>SCN.T.inv(v[1],v[2])));if(!pts.length)return;
+ const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+ const out=x1<0||y1<0||x0>SCN.W||y0>SCN.H;const r=scCv.getBoundingClientRect();const w=Math.max(x1-x0,SCN.W*0.05),h=Math.max(y1-y0,SCN.H*0.05);
+ const s=Math.min(r.width/w,r.height/h)*0.7;SCN.view={s,ox:r.width/2-(x0+x1)/2*s,oy:r.height/2-(y0+y1)/2*s};scRender();
+ const m=scPanel.querySelector('#scWarn');if(m)m.innerHTML=out?'<span class="err">⚠️ Le contour tombe en dehors du plan : le calage est faux (X et Y inversés ? chiffre mal saisi ?). Revenez à l’étape 2 avec « Retour ».</span>':'✓ Contour placé — vérifiez qu’il suit bien le dessin.';
+ toastS(out?'Contour hors du plan : vérifiez le calage':`${pts.length} bornes placées ✓`);}
 function scResize(){const r=scCv.getBoundingClientRect();const dpr=Math.min(devicePixelRatio,2);scCv.width=r.width*dpr;scCv.height=r.height*dpr;scRender();}
 function scFit(){const r=scCv.getBoundingClientRect();if(!SCN.img)return;const s=Math.min(r.width/SCN.W,r.height/SCN.H)*0.95;SCN.view={s,ox:(r.width-SCN.W*s)/2,oy:(r.height-SCN.H*s)/2};scRender();}
 const toImg=(cx,cy)=>[(cx-SCN.view.ox)/SCN.view.s,(cy-SCN.view.oy)/SCN.view.s];
@@ -849,9 +855,9 @@ function scPanelRender(){q('#scStep').textContent=`${SCN.step}/4 · ${STEPS[SCN.
   <div class="res">${SCN.cal.map((p,i)=>`C${i+1} : ${bdS(p.X.toFixed(2)+' ; '+p.Y.toFixed(2))}`).join(' · ')||'Aucun point.'}${SCN.T?` · échelle ${bdS((1/SCN.T.scale).toFixed(2)+' px/m')} · ${SCN.T.proj?'perspective corrigée':SCN.cal.length===2?'similitude':'affine'}`:''}${rms!=null?` · écart moyen <b>${bdS(rms.toFixed(2)+' m')}</b>`:''}</div>
   <div class="row"><button id="scUndo">↶ Annuler le dernier</button><span style="flex:1"></span><button id="scNext" class="on" ${SCN.T?'':'disabled'}>Suivant</button></div>`;
  if(SCN.step===3)h=`<div class="hint">Collez le tableau des bornes du plan (Nom X Y, ou X Nom Y), <b>ou</b> touchez les bornes sur le plan dans l’ordre. Vérifiez que le contour tombe bien sur le dessin.</div>
-  <textarea id="scB" rows="3" placeholder="# Titre 12345/30&#10;464899.42 B1 468376.61&#10;…"></textarea>
+  <textarea id="scB" rows="3" placeholder="# Titre 12345/30&#10;464899.42 B1 468376.61&#10;…">${(SCN.btxt||'').replace(/</g,'&lt;')}</textarea>
   <div class="row"><button id="scBpaste">Placer le tableau</button><button id="scUndo">↶ Annuler</button><span style="flex:1"></span><button id="scPrev">Retour</button><button id="scNext" class="on">Suivant</button></div>
-  <div class="res">${SCN.parcels.map(P=>`${P.name} : <b>${P.pts.length}</b> bornes${P.pts.length>2?' · '+bdS(haF(pArea(P.pts.map(v=>[v[1],v[2]])))):''}`).join(' · ')||'Aucune borne.'}</div>`;
+  <div class="res">${SCN.parcels.map(P=>`${P.name} : <b>${P.pts.length}</b> bornes${P.pts.length>2?' · '+bdS(haF(pArea(P.pts.map(v=>[v[1],v[2]])))):''}`).join(' · ')||'Aucune borne.'}</div><div id="scWarn" class="res"></div>`;
  if(SCN.step===4)h=`<div class="hint">Touchez chaque point coté (le petit point à côté du chiffre) et saisissez l’altitude. Plus il y a de points (surtout à l’intérieur de la parcelle), plus le relief est juste.</div>
   <div class="res"><b>${SCN.spots.length}</b> points cotés${SCN.spots.length?` · de ${bdS(Math.min(...SCN.spots.map(s=>s.Z)).toFixed(1))} à ${bdS(Math.max(...SCN.spots.map(s=>s.Z)).toFixed(1))} m`:''}</div>
   <div class="grid2"><div><label class="lab">Nom du projet</label><input id="scName" class="txt" value="${(q('#impName').value||'').replace(/"/g,'&quot;')}"></div><div><label class="lab">Système</label><select id="scProj" class="txt">${q('#impProj').innerHTML}</select></div></div>
@@ -861,7 +867,7 @@ function scPanelRender(){q('#scStep').textContent=`${SCN.step}/4 · ${STEPS[SCN.
  const f=scPanel.querySelector('#scFile');if(f)f.onchange=e=>e.target.files[0]&&scLoad(e.target.files[0]);on('scCam',()=>q('#camIn').click());
  on('scNext',()=>{SCN.step++;scPanelRender();});on('scPrev',()=>{SCN.step--;scPanelRender();});
  on('scUndo',()=>{if(!q('#scPop').hidden){q('#pNo').click();return;}if((SCN.step===2&&!SCN.cal.length)||(SCN.step===3&&!SCN.parcels.length)||(SCN.step===4&&!SCN.spots.length)){toastS('Rien à annuler');return;}if(SCN.step===2){SCN.cal.pop();SCN.T=solveCal(SCN.cal);}else if(SCN.step===3){const P=SCN.parcels.at(-1);if(P){if(P.fromPaste)SCN.parcels.pop();else{P.pts.pop();if(!P.pts.length)SCN.parcels.pop();}}}else if(SCN.step===4)SCN.spots.pop();scPanelRender();scRender();});
- on('scBpaste',()=>{const ps=parseBornes(scPanel.querySelector('#scB').value);if(!ps.length){toastS('Aucune borne reconnue');return;}ps.forEach(p=>p.fromPaste=true);SCN.parcels=SCN.parcels.filter(p=>!p.fromPaste).concat(ps);scPanelRender();scRender();});
+ on('scBpaste',()=>{SCN.btxt=scPanel.querySelector('#scB').value;const ps=parseBornes(SCN.btxt);if(!ps.length){toastS('Aucune borne reconnue');return;}ps.forEach(p=>p.fromPaste=true);SCN.parcels=SCN.parcels.filter(p=>!p.fromPaste).concat(ps);scPanelRender();scFocus();});
  if(SCN.step===4){const sp=scPanel.querySelector('#scProj');sp.value=q('#impProj').value;}
  on('scGo',async()=>{const m=scPanel.querySelector('#scMsg');m.textContent='Construction…';
   try{const name=scPanel.querySelector('#scName').value,proj=scPanel.querySelector('#scProj').value;q('#impName').value=name;q('#impProj').value=proj;
