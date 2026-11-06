@@ -801,11 +801,12 @@ function scFocus(){if(!SCN.T)return;const pts=SCN.parcels.flatMap(P=>P.pts.map(v
  const s=Math.min(r.width/w,r.height/h)*0.7;SCN.view={s,ox:r.width/2-(x0+x1)/2*s,oy:r.height/2-(y0+y1)/2*s};scRender();
  const m=scPanel.querySelector('#scWarn');if(m)m.innerHTML=out?'<span class="err">⚠️ Le contour tombe en dehors du plan : le calage est faux (X et Y inversés ? chiffre mal saisi ?). Revenez à l’étape 2 avec « Retour ».</span>':'✓ Contour placé — vérifiez qu’il suit bien le dessin.';
  toastS(out?'Contour hors du plan : vérifiez le calage':`${pts.length} bornes placées ✓`);}
-function scResize(){const r=scCv.getBoundingClientRect();const dpr=Math.min(devicePixelRatio,2);scCv.width=r.width*dpr;scCv.height=r.height*dpr;scRender();}
+function scResize(){const r=scCv.getBoundingClientRect();if(!r.width||!r.height)return;const dpr=Math.min(devicePixelRatio,2);const w=Math.round(r.width*dpr),h=Math.round(r.height*dpr);if(scCv.width!==w||scCv.height!==h){scCv.width=w;scCv.height=h;}scRender();}
+new ResizeObserver(()=>{if(!scan.hidden)scResize();}).observe(scCv);
 function scFit(){const r=scCv.getBoundingClientRect();if(!SCN.img)return;const s=Math.min(r.width/SCN.W,r.height/SCN.H)*0.95;SCN.view={s,ox:(r.width-SCN.W*s)/2,oy:(r.height-SCN.H*s)/2};scRender();}
 const toImg=(cx,cy)=>[(cx-SCN.view.ox)/SCN.view.s,(cy-SCN.view.oy)/SCN.view.s];
 const toScr=(px,py)=>[px*SCN.view.s+SCN.view.ox,py*SCN.view.s+SCN.view.oy];
-function scRender(){const dpr=scCv.width/(scCv.getBoundingClientRect().width||1);const c=scCtx;c.setTransform(1,0,0,1,0,0);c.fillStyle='#e9ece9';c.fillRect(0,0,scCv.width,scCv.height);
+function scRender(){const rr=scCv.getBoundingClientRect();if(rr.height&&Math.abs(scCv.height/rr.height-scCv.width/(rr.width||1))>0.01){scCv.height=Math.round(rr.height*scCv.width/rr.width);}const dpr=scCv.width/(rr.width||1);const c=scCtx;c.setTransform(1,0,0,1,0,0);c.fillStyle='#e9ece9';c.fillRect(0,0,scCv.width,scCv.height);
  if(!SCN.img){c.fillStyle='#555';c.font=`${14*dpr}px Inter,sans-serif`;c.textAlign='center';c.fillText('Chargez une image ou un PDF du plan',scCv.width/2,scCv.height/2);c.textAlign='start';return;}
  c.setTransform(dpr*SCN.view.s,0,0,dpr*SCN.view.s,dpr*SCN.view.ox,dpr*SCN.view.oy);c.imageSmoothingQuality='high';if(SCN.con)c.filter='grayscale(1) contrast(1.8) brightness(1.08)';c.drawImage(SCN.img,0,0);c.filter='none';
  c.setTransform(dpr,0,0,dpr,0,0);
