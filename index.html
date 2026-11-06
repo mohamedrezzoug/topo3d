@@ -94,7 +94,7 @@ button.cam{display:flex;align-items:center;justify-content:center;gap:8px;paddin
 .sbar{display:flex;align-items:center;gap:8px;padding:10px 12px;font-size:calc(13px*var(--k));border-bottom:1px solid var(--line)}
 .sview{position:relative;flex:1;min-height:0}
 #scCv{width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
-#scPop{position:absolute;left:10px;right:10px;bottom:10px;max-width:460px;margin:auto;background:#131c18;border:1px solid var(--acc);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px}
+#scPop{position:absolute;left:10px;right:10px;top:10px;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:460px;margin:auto;background:#131c18;border:1px solid var(--acc);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px}
 #scPop[hidden]{display:none}
 #scPanel{padding:10px 12px;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);max-height:42vh;overflow:auto}
 button:disabled{opacity:.4}
@@ -163,7 +163,7 @@ header{padding-top:calc(10px + env(safe-area-inset-top))}
  <div class="hint">Plan scanné (PDF, photo) : bouton « Plan scanné » — calage et saisie guidés. Pour un plan importé, l’image satellite n’est pas disponible.</div>
 </div></div>
 <div id="scan" hidden>
- <div class="sbar"><b id="scStep">1/4</b><span style="flex:1"></span><button class="ghost" id="scCon">Contraste</button><button class="ghost" id="scFitB" title="Recentrer">⤢</button><button class="ghost" id="scClose">✕</button></div>
+ <div class="sbar"><b id="scStep">1/4</b><span style="flex:1"></span><button class="ghost" id="scRot" title="Pivoter le plan">⟳ 90°</button><button class="ghost" id="scCon">Contraste</button><button class="ghost" id="scFitB" title="Recentrer">⤢</button><button class="ghost" id="scClose">✕ Quitter</button></div>
  <div class="sview"><canvas id="scCv"></canvas><div id="scPop" hidden></div></div>
  <div id="scPanel"></div>
 </div>
@@ -743,6 +743,9 @@ q('#srcScan').onclick=()=>{imp.hidden=true;scan.hidden=false;scResize();scRender
 q('#scClose').onclick=()=>{scan.hidden=true;};
 q('#camBtn').onclick=()=>q('#camIn').click();
 q('#camIn').onchange=e=>{const f=e.target.files[0];if(!f)return;imp.hidden=true;scan.hidden=false;Object.assign(SCN,{step:1});scPanelRender();scResize();scLoad(f);e.target.value='';};
+q('#scRot').onclick=()=>{if(!SCN.img)return;const W=SCN.W,H=SCN.H;const c=document.createElement('canvas');c.width=H;c.height=W;const x=c.getContext('2d');x.translate(H,0);x.rotate(Math.PI/2);x.drawImage(SCN.img,0,0);
+ const rot=p=>{const px=p.px;p.px=H-p.py;p.py=px;};SCN.cal.forEach(rot);SCN.spots.forEach(rot);SCN.img=c;SCN.W=H;SCN.H=W;SCN.T=solveCal(SCN.cal);scFit();scPanelRender();};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!q('#scPop').hidden){q('#pNo')?.click();}});
 q('#scCon').onclick=()=>{SCN.con=!SCN.con;q('#scCon').classList.toggle('on',SCN.con);scRender();};q('#scFitB').onclick=()=>scFit();
 // ---- transform ----
 function solveCal(c){if(c.length<2)return null;
@@ -857,7 +860,7 @@ function scPanelRender(){q('#scStep').textContent=`${SCN.step}/4 · ${STEPS[SCN.
  const on=(id,f)=>{const e=scPanel.querySelector('#'+id);if(e)e.onclick=f;};
  const f=scPanel.querySelector('#scFile');if(f)f.onchange=e=>e.target.files[0]&&scLoad(e.target.files[0]);on('scCam',()=>q('#camIn').click());
  on('scNext',()=>{SCN.step++;scPanelRender();});on('scPrev',()=>{SCN.step--;scPanelRender();});
- on('scUndo',()=>{if(SCN.step===2){SCN.cal.pop();SCN.T=solveCal(SCN.cal);}else if(SCN.step===3){const P=SCN.parcels.at(-1);if(P){if(P.fromPaste)SCN.parcels.pop();else{P.pts.pop();if(!P.pts.length)SCN.parcels.pop();}}}else if(SCN.step===4)SCN.spots.pop();scPanelRender();scRender();});
+ on('scUndo',()=>{if(!q('#scPop').hidden){q('#pNo').click();return;}if((SCN.step===2&&!SCN.cal.length)||(SCN.step===3&&!SCN.parcels.length)||(SCN.step===4&&!SCN.spots.length)){toastS('Rien à annuler');return;}if(SCN.step===2){SCN.cal.pop();SCN.T=solveCal(SCN.cal);}else if(SCN.step===3){const P=SCN.parcels.at(-1);if(P){if(P.fromPaste)SCN.parcels.pop();else{P.pts.pop();if(!P.pts.length)SCN.parcels.pop();}}}else if(SCN.step===4)SCN.spots.pop();scPanelRender();scRender();});
  on('scBpaste',()=>{const ps=parseBornes(scPanel.querySelector('#scB').value);if(!ps.length){toastS('Aucune borne reconnue');return;}ps.forEach(p=>p.fromPaste=true);SCN.parcels=SCN.parcels.filter(p=>!p.fromPaste).concat(ps);scPanelRender();scRender();});
  if(SCN.step===4){const sp=scPanel.querySelector('#scProj');sp.value=q('#impProj').value;}
  on('scGo',async()=>{const m=scPanel.querySelector('#scMsg');m.textContent='Construction…';
